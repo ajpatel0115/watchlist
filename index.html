@@ -61,7 +61,7 @@ input,select,textarea{width:100%;padding:10px;border-radius:10px;border:1px soli
 <div id="ov"><div class="sheet" id="sheet"></div></div>
 <script>
 var KEY="watchlist-v2",items=[],tab="watch",who="All",q="";
-var SVC=["Netflix","Max","Disney+","Hulu","Prime Video","Apple TV+","Peacock","Paramount+","Theaters","Other"];
+var SVC=["Netflix","Max","Disney+","Hulu","Prime Video","Apple TV+","Peacock","Paramount+","Theaters","Rent/Buy","Other"];
 try{items=JSON.parse(localStorage.getItem(KEY)||"[]")}catch(e){items=[]}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(items))}catch(e){}}
 function $(id){return document.getElementById(id)}
@@ -74,6 +74,17 @@ function waiting(i){if(i.status==="done"||!soon(i))return false;var c=tot(i);ret
 function fill(s){s.seen=[];for(var k=1;k<=s.eps;k++)s.seen.push(k)}
 /* TV database (TVmaze) */
 async function tv(path){var r=await fetch("https://api.tvmaze.com"+path);if(!r.ok)throw new Error("TV database error "+r.status);return r.json()}
+/* Movie database (TMDB, needs a free key) */
+function tkey(){var k="";try{k=localStorage.getItem("tmdbkey")||""}catch(e){}
+  if(!k){k=(prompt("To search movies, paste your free TMDB API key (themoviedb.org → Settings → API).")||"").trim();if(k)try{localStorage.setItem("tmdbkey",k)}catch(e){}}return k}
+async function tm(path){var k=tkey();if(!k)throw new Error("No movie key entered");var u="https://api.themoviedb.org/3"+path,h={};
+  if(k.length>60)h.Authorization="Bearer "+k;else u+=(u.indexOf("?")<0?"?":"&")+"api_key="+encodeURIComponent(k);
+  var r=await fetch(u,{headers:h});
+  if(r.status===401){try{localStorage.removeItem("tmdbkey")}catch(e){}throw new Error("That key wasn’t accepted. Tap search to enter it again.")}
+  if(!r.ok)throw new Error("Movie database error "+r.status);return r.json()}
+function svcName(n){var m={"disney plus":"Disney+","amazon prime video":"Prime Video","apple tv plus":"Apple TV+","paramount plus":"Paramount+","hbo max":"Max","peacock premium":"Peacock"};return m[n.toLowerCase()]||n}
+async function movieSvc(id,date){var p=await tm("/movie/"+id+"/watch/providers"),us=(p.results||{}).US||{},f=(us.flatrate||[])[0];
+  if(f)return svcName(f.provider_name);if(date&&days(date)>0)return "Theaters";return (us.rent||us.buy||[]).length?"Rent/Buy":"Other"}
 function build(eps){var t=iso(),S={},nx=null;eps.forEach(function(e){if(e.number==null||!e.airdate)return;if(e.airdate<=t){var s=S[e.season]=S[e.season]||{n:e.season,eps:0,seen:[]};s.eps=Math.max(s.eps,e.number)}else if(!nx)nx=e});
   return{seasons:Object.keys(S).map(function(k){return S[k]}).sort(function(a,b){return a.n-b.n}),date:nx?nx.airdate:"",note:nx?"S"+nx.season+" E"+nx.number:""}}
 function merge(i,b){var grew=false;i.seasons=i.seasons||[];
@@ -111,10 +122,10 @@ function close(){$("ov").classList.remove("show");render()}
 /* Add / edit form */
 function form(i){
   var n=!i;i=i||{type:"show",who:"Both",svc:"Netflix",date:"",note:""};
-  var T={tvm:i.tvm,b:null},R=[],opts=SVC.slice();if(opts.indexOf(i.svc)<0)opts.push(i.svc);
+  var T={tvm:i.tvm,tmdb:i.tmdb,b:null},R=[],M=[],opts=SVC.slice();if(opts.indexOf(i.svc)<0)opts.push(i.svc);
   open(`<h2 style="margin:0">${n?"Add title":"Edit title"}</h2>
   <label>Title</label><input id="f-t" value="${esc(i.title)}">
-  <button type="button" class="lk" id="f-l">🔎 Search TV database (seasons, channel, dates)</button>
+  <button type="button" class="lk" id="f-l">🔎 Search TV / movie database</button>
   <div class="meta" id="f-st" style="margin-top:6px"></div><div id="f-res"></div>
   <div class="two"><div><label>Type</label><select id="f-ty"><option value="show"${i.type==="show"?" selected":""}>TV show / series</option><option value="movie"${i.type==="movie"?" selected":""}>Movie</option></select></div>
   <div><label>Who watches</label><select id="f-w">${["Both","Anita","Dan"].map(function(w){return `<option${i.who===w?" selected":""}>${w}</option>`}).join("")}</select></div></div>
@@ -124,7 +135,20 @@ function form(i){
   <label>Notes</label><input id="f-n" placeholder="e.g. Season 3 premiere" value="${esc(i.note)}">
   <div class="sub"><button type="button" id="f-x">Cancel</button><button type="button" class="go" id="f-ok">Save</button></div>`);
   $("f-x").onclick=close;
+  function setSvc(c){if(!c)return;var hit=SVC.filter(function(x){return x.toLowerCase()===c.toLowerCase()})[0];if(hit){$("f-s").value=hit;$("f-s2").value=""}else $("f-s2").value=c}
+  function movieSearch(){var t=$("f-t").value.trim(),st=$("f-st");st.textContent="Searching…";$("f-res").innerHTML="";
+    return tm("/search/movie?query="+encodeURIComponent(t)).then(function(d){M=d.results||[];
+      if(!M.length){st.textContent="No matches. You can still fill it in by hand.";return}
+      st.textContent="Tap the right match:";
+      $("f-res").innerHTML=M.slice(0,6).map(function(m,k){return '<button type="button" class="res" data-m="'+k+'"><b>'+esc(m.title)+'</b> '+(m.release_date?"("+m.release_date.slice(0,4)+")":"")+'<br><span class="meta">'+esc((m.overview||"").slice(0,90))+'</span></button>'}).join("")
+    }).catch(function(e){st.textContent="Search failed: "+(e.message||"check your connection")})}
+  async function pickMovie(k){var m=M[k],st=$("f-st");st.textContent="Loading…";
+    try{var sv=await movieSvc(m.id,m.release_date);T.tvm=null;T.tmdb=m.id;$("f-t").value=m.title;$("f-ty").value="movie";setSvc(sv);
+      $("f-d").value=m.release_date||"";$("f-n").value="";$("f-res").innerHTML="";
+      st.textContent="Linked: "+m.title+(m.release_date?", releases "+m.release_date:"")+". Pick who watches, then Save."}
+    catch(e){st.textContent="Couldn’t load details: "+(e.message||"try again")}}
   $("f-l").onclick=async function(){var t=$("f-t").value.trim(),st=$("f-st");if(!t){st.textContent="Type a title first.";return}
+    if($("f-ty").value==="movie")return movieSearch();
     st.textContent="Searching…";$("f-res").innerHTML="";
     try{R=await tv("/search/shows?q="+encodeURIComponent(t));
       if(!R.length){st.textContent="No matches. You can still fill it in by hand.";return}
@@ -132,7 +156,7 @@ function form(i){
       $("f-res").innerHTML=R.slice(0,6).map(function(r,k){var s=r.show,c=(s.webChannel&&s.webChannel.name)||(s.network&&s.network.name)||"";
         return `<button type="button" class="res" data-k="${k}"><b>${esc(s.name)}</b> ${s.premiered?"("+s.premiered.slice(0,4)+")":""}<br><span class="meta">${esc(c)}${s.status?" · "+esc(s.status):""}</span></button>`}).join("")
     }catch(e){st.textContent="Search failed: "+(e.message||"check your connection")}};
-  $("f-res").onclick=async function(e){var b=e.target.closest(".res");if(!b)return;var s=R[+b.dataset.k].show,st=$("f-st");
+  $("f-res").onclick=async function(e){var b=e.target.closest(".res");if(!b)return;if(b.dataset.m!==undefined)return pickMovie(+b.dataset.m);var s=R[+b.dataset.k].show,st=$("f-st");
     st.textContent="Loading episodes…";
     try{var eps=await tv("/shows/"+s.id+"/episodes");T.tvm=s.id;T.b=build(eps);
       $("f-t").value=s.name;$("f-ty").value="show";
@@ -145,7 +169,7 @@ function form(i){
   $("f-ok").onclick=function(){var t=$("f-t").value.trim();if(!t){$("f-t").focus();return}
     var o=i;o.title=t;o.type=$("f-ty").value;o.who=$("f-w").value;o.svc=$("f-s2").value.trim()||$("f-s").value;o.date=$("f-d").value;o.note=$("f-n").value.trim();
     if(n){o.id=Date.now()+"";o.status="want";items.push(o)}
-    if(T.tvm){o.tvm=T.tvm;if(T.b)merge(o,T.b)}
+    if(T.tvm){o.tvm=T.tvm;if(T.b)merge(o,T.b)}if(T.tmdb)o.tmdb=T.tmdb;
     save();close()}
 }
 /* Episodes sheet */
@@ -155,6 +179,7 @@ function epsheet(i,keep){
   i.seasons.forEach(function(s,x){h+='<div style="margin-top:14px"><b>Season '+s.n+'</b> <span class="meta">'+s.seen.length+'/'+s.eps+'</span><div class="acts" style="margin:6px 0"><button data-s="all" data-x="'+x+'">All watched</button><button data-s="none" data-x="'+x+'">Clear</button><button data-s="rm" data-x="'+x+'">Remove</button></div><div class="epg">';
     for(var k=1;k<=s.eps;k++)h+='<button class="ep'+(s.seen.indexOf(k)>=0?" s":"")+'" data-s="ep" data-x="'+x+'" data-k="'+k+'">'+k+'</button>';h+='</div></div>'});
   if(i.tvm)h+='<button type="button" class="lk" id="e-rf">🔄 Refresh from TV database</button>';
+  h+='<div style="margin-top:12px"><label>Already watched everything through…</label><div class="two"><input id="u-s" type="number" min="1" placeholder="Season #"><input id="u-e" type="number" min="0" placeholder="Episode # (blank = whole season)"></div><button type="button" class="lk" id="u-go">✓ Mark watched up to here</button></div>';
   h+='<div class="meta" id="e-st" style="margin-top:6px"></div><div class="two" style="margin-top:12px"><div><label>Season #</label><input id="e-n" type="number" min="1" value="'+(i.seasons.length+1)+'"></div><div><label>Episodes</label><input id="e-c" type="number" min="1" max="200" placeholder="e.g. 10"></div></div><div class="sub"><button type="button" id="e-add">+ Add season</button><button type="button" class="go" id="e-x">Done</button></div>';
   sh.innerHTML=h;sh.scrollTop=y;$("ov").classList.add("show");
   sh.onclick=function(e){var d=e.target.dataset;if(!d.s)return;var s=i.seasons[+d.x];
@@ -163,6 +188,8 @@ function epsheet(i,keep){
     else if(d.s==="rm"){if(!confirm("Remove season "+s.n+"?"))return;i.seasons.splice(+d.x,1)}
     save();epsheet(i,1)};
   $("e-x").onclick=close;
+  $("u-go").onclick=function(){var S=+$("u-s").value,E=$("u-e").value===""?Infinity:+$("u-e").value;if(!S)return;
+    i.seasons.forEach(function(s){if(s.n<S)fill(s);else if(s.n===S){s.seen=[];for(var k=1;k<=Math.min(E,s.eps);k++)s.seen.push(k)}});save();epsheet(i,1)};
   $("e-add").onclick=function(){var n=+$("e-n").value,c=+$("e-c").value;if(!n||!c||c>200)return;
     if(i.seasons.some(function(s){return s.n===n})){alert("Season "+n+" is already added.");return}
     i.seasons.push({n:n,eps:c,seen:[]});i.seasons.sort(function(a,b){return a.n-b.n});if(i.status==="done")i.status="want";save();epsheet(i,1)};
@@ -179,12 +206,13 @@ function backup(){
   $("b-l").onclick=function(){try{var a=JSON.parse($("b-t").value);if(!Array.isArray(a))throw 0;if(!confirm("Replace your current list with this one ("+a.length+" titles)?"))return;items=a;save();close()}catch(e){$("b-st").textContent="That doesn’t look like a saved list."}}
 }
 /* Refresh all linked shows */
-$("rf").onclick=async function(){var l=items.filter(function(i){return i.tvm&&i.status!=="drop"}),m=$("msg"),c=0;
-  if(!l.length){m.textContent="No shows are linked to the TV database yet. Use Search when adding or editing a show.";return}
+$("rf").onclick=async function(){var l=items.filter(function(i){return (i.tvm||i.tmdb)&&i.status!=="drop"}),m=$("msg"),c=0;
+  if(!l.length){m.textContent="Nothing is linked to a database yet. Use Search when adding or editing a title.";return}
   for(var k=0;k<l.length;k++){m.textContent="Refreshing "+(k+1)+" of "+l.length+"…";
-    try{merge(l[k],build(await tv("/shows/"+l[k].tvm+"/episodes")));c++}catch(e){}
+    try{var it=l[k];if(it.tvm)merge(it,build(await tv("/shows/"+it.tvm+"/episodes")));
+      else if(it.status!=="done"){var d=await tm("/movie/"+it.tmdb);it.date=d.release_date||it.date;it.svc=await movieSvc(it.tmdb,it.date)}c++}catch(e){}
     await new Promise(function(r){setTimeout(r,600)})}
-  save();render();m.textContent="Refreshed "+c+" of "+l.length+" shows."};
+  save();render();m.textContent="Refreshed "+c+" of "+l.length+" titles."};
 $("bk").onclick=backup;
 $("add").onclick=function(){form(null)};
 $("ov").onclick=function(e){if(e.target.id==="ov")close()};
