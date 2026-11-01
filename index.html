@@ -69,7 +69,8 @@ function iso(){var d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1
 function days(s){return Math.round((new Date(s+"T00:00")-new Date(iso()+"T00:00"))/864e5)}
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
 function tot(i){var t=0,w=0;(i.seasons||[]).forEach(function(s){t+=s.eps;w+=s.seen.length});return{t:t,w:w}}
-function upcoming(i){if(i.status==="done"||i.status==="drop"||!i.date||days(i.date)<=0)return false;var c=tot(i);return !(c.t>c.w)}
+function soon(i){return i.status!=="drop"&&!!i.date&&days(i.date)>0}
+function waiting(i){if(i.status==="done"||!soon(i))return false;var c=tot(i);return !(c.t>c.w)}
 function fill(s){s.seen=[];for(var k=1;k<=s.eps;k++)s.seen.push(k)}
 /* TV database (TVmaze) */
 async function tv(path){var r=await fetch("https://api.tvmaze.com"+path);if(!r.ok)throw new Error("TV database error "+r.status);return r.json()}
@@ -92,8 +93,9 @@ function render(){
     if(q&&(i.title+" "+i.note+" "+i.svc).toLowerCase().indexOf(q)<0)return false;
     if(tab==="done")return i.status==="done";
     if(tab==="drop")return i.status==="drop";
+    if(tab==="soon")return soon(i);
     if(i.status==="done"||i.status==="drop")return false;
-    return tab==="soon"?upcoming(i):!upcoming(i)});
+    return !waiting(i)});
   l.sort(function(a,b){return tab==="soon"?a.date.localeCompare(b.date):(a.title||"").localeCompare(b.title||"")});
   $("list").innerHTML=l.map(function(i){
     var rel="";if(i.date){var d=days(i.date);rel=d>0?'<span class="soon">'+(d===1?"Tomorrow":"In "+d+" days")+' · '+i.date+'</span>':(i.status==="want"&&i.type==="movie"?'<span class="now">Available now</span>':"")}
