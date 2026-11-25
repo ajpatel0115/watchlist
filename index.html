@@ -112,7 +112,9 @@ function prog(i){var S=i.seasons||[];if(i.type!=="show"||!S.length)return "";var
   return '<div class="meta" style="margin-top:6px">'+(nx?"Next: "+nx+" · ":"All caught up · ")+c.w+" of "+c.t+" episodes watched</div>"}
 function stars(i){if(i.status!=="done")return "";var P=i.who==="Both"?PEOPLE.slice():[i.who];
   return P.map(function(p){var v=(i.r&&i.r[p])||0,s="";for(var k=1;k<=5;k++)s+='<span class="st'+(k<=v?" f":"")+'" data-a="rate" data-id="'+i.id+'" data-p="'+p+'" data-n="'+k+'">★</span>';return '<div class="meta" style="margin-top:6px">'+p+' '+s+'</div>'}).join("")}
-function render(){
+function inTab(i,t){if(t==="done")return i.status==="done";if(t==="drop")return i.status==="drop";if(t==="soon")return soon(i);if(i.status==="done"||i.status==="drop")return false;return !waiting(i)}
+function render(){try{renderMain()}catch(e){$("list").innerHTML='<div class="empty">Display error: '+esc((e&&e.message)||e)+'<br>Please send this message to Anita.</div>';console.error(e)}}
+function renderMain(){
   var T=[["watch","To Watch"],["soon","Coming Soon"],["done","Watched"],["drop","Dropped"]];
   $("tabs").innerHTML=T.map(function(t){return '<button class="'+(tab===t[0]?"on":"")+'" data-t="'+t[0]+'">'+t[1]+'</button>'}).join("");
   $("chips").innerHTML=["All"].concat(PEOPLE,["Both"],PEOPLE.map(function(p){return "Only "+p})).map(function(w){return '<button class="'+(who===w?"on":"")+'" data-w="'+esc(w)+'">'+(w==="Both"?"Together":esc(w))+'</button>'}).join("");
@@ -120,16 +122,16 @@ function render(){
   $("tchips").innerHTML=[["All","All types"],["show","📺 TV shows"],["movie","🎬 Movies"]].map(function(t){return '<button class="'+(ty===t[0]?"on":"")+'" data-y="'+t[0]+'">'+t[1]+'</button>'}).join("");
   var cs=[];items.forEach(function(i){if(i.svc&&cs.indexOf(i.svc)<0)cs.push(i.svc)});cs.sort();if(ch!=="All"&&cs.indexOf(ch)<0)ch="All";
   $("chsel").innerHTML='<option value="All">📡 All channels</option>'+cs.map(function(c){return '<option value="'+esc(c)+'"'+(c===ch?" selected":"")+'>'+esc(c)+'</option>'}).join("");
-  var l=items.filter(function(i){
+  var base=items.filter(function(i){
     if(ch!=="All"&&i.svc!==ch)return false;
     if(ty!=="All"&&i.type!==ty)return false;
     if(!whoOK(i))return false;
     if(q&&(i.title+" "+i.note+" "+i.svc).toLowerCase().indexOf(q)<0)return false;
-    if(tab==="done")return i.status==="done";
-    if(tab==="drop")return i.status==="drop";
-    if(tab==="soon")return soon(i);
-    if(i.status==="done"||i.status==="drop")return false;
-    return !waiting(i)});
+    return true});
+  function cnt(t){return base.filter(function(i){return inTab(i,t)}).length}
+  var l=base.filter(function(i){return inTab(i,tab)});
+  $("tabs").innerHTML=T.map(function(t){return '<button class="'+(tab===t[0]?"on":"")+'" data-t="'+t[0]+'">'+t[1]+' ('+cnt(t[0])+')</button>'}).join("");
+  var oth=T.filter(function(t){return t[0]!==tab&&cnt(t[0])}).map(function(t){return t[1]+" ("+cnt(t[0])+")"}),hint=oth.length?"<br>Check: "+oth.join(", "):"";
   l.sort(function(a,b){return tab==="soon"?a.date.localeCompare(b.date):(a.title||"").localeCompare(b.title||"")});
   $("list").innerHTML=l.map(function(i){
     var rel="";if(i.date){var d=days(i.date);rel=d>0?'<span class="soon">'+(d===1?"Tomorrow":"In "+d+" days")+' · '+i.date+'</span>':(i.status==="want"&&i.type==="movie"?'<span class="now">Available now</span>':"")}
@@ -139,7 +141,7 @@ function render(){
     '<div class="acts">'+(i.status==="done"||i.status==="drop"?"":'<button class="pri" data-a="done"'+id+'>✓ Watched</button>')+
     (i.type==="show"?'<button data-a="eps"'+id+'>Episodes</button>':"")+
     (i.status==="drop"?'<button data-a="resume"'+id+'>Resume</button>':(i.status!=="done"&&i.type==="show")?'<button data-a="drop"'+id+'>Abandon</button>':"")+
-    '<button data-a="edit"'+id+'>Edit</button><button data-a="del"'+id+'>Delete</button></div></div>'}).join("")||'<div class="empty">'+(tab==="done"?"Nothing here yet. Titles move here when you tap ✓ Watched, or when every episode is watched and nothing new is scheduled.":"Nothing here yet. Tap + to add a title.")+'</div>'}
+    '<button data-a="edit"'+id+'>Edit</button><button data-a="del"'+id+'>Delete</button></div></div>'}).join("")||'<div class="empty">'+(tab==="done"?"Nothing here yet. Titles move here when you tap ✓ Watched, or when every episode is watched and nothing new is scheduled.":"Nothing here yet. Tap + to add a title.")+hint+'</div>'}
 var BACK='<button type="button" class="back" id="bk-b">← Back</button>';
 function open(h){$("sheet").innerHTML=BACK+h;$("sheet").scrollTop=0;$("ov").classList.add("show")}
 function close(){$("ov").classList.remove("show");render()}
@@ -273,7 +275,7 @@ function settings(){
   if(!on)return;
   if(hid){$("y-c").onclick=function(){if(navigator.clipboard)navigator.clipboard.writeText(fmt(hid));st.textContent="Code copied."};
     $("y-l").onclick=function(){if(confirm("Stop syncing on this device? Your list stays here but won’t update with the family’s.")){SYNC.leave();settings()}}}
-  else{$("y-new").onclick=async function(){st.textContent="Creating…";try{await SYNC.create();settings()}catch(e){st.textContent="Couldn’t create: "+(e.message||"check your setup")}};
+  else{$("y-new").onclick=async function(){if(!items.length&&!confirm("Your list is empty on this device. Create an empty household anyway?"))return;st.textContent="Creating…";try{await SYNC.create();settings()}catch(e){st.textContent="Couldn’t create: "+(e.message||"check your setup")}};
     $("y-j").onclick=async function(){var c=$("y-code").value.toUpperCase().replace(/[^A-Z0-9]/g,"");
       if(c.length!==16){st.textContent="That code should be 16 letters and numbers.";return}
       if(items.length&&!confirm("Joining replaces the list on this device with the household’s list. Continue?"))return;
@@ -283,10 +285,11 @@ function settings(){
 function backup(){
   open(`<h2 style="margin:0">Backup / share</h2><div class="meta">Copy this text to move your list to another device (paste it into Notes or Messages), then paste it here on the other device and tap Load.</div>
   <textarea id="b-t" rows="8" style="margin-top:10px"></textarea><div class="meta" id="b-st" style="margin-top:6px"></div>
-  <div class="sub"><button type="button" id="b-c">Copy</button><button type="button" id="b-l">Load (replaces list)</button></div><div class="sub"><button type="button" class="go" id="b-x">Close</button></div>`);
+  <div class="sub"><button type="button" id="b-c">Copy</button><button type="button" id="b-l">Load (replaces list)</button></div>${localStorage.getItem("wl-prev")?'<div class="sub"><button type="button" id="b-r">↩ Restore previous list</button></div>':""}<div class="sub"><button type="button" class="go" id="b-x">Close</button></div>`);
   $("b-t").value=JSON.stringify(items);$("b-x").onclick=close;
+  if($("b-r"))$("b-r").onclick=function(){try{var a=JSON.parse(localStorage.getItem("wl-prev"));if(!Array.isArray(a))throw 0;if(!confirm("Restore the previous list ("+a.length+" titles)? This replaces what’s on this device now."))return;items=a;save();close()}catch(e){$("b-st").textContent="Couldn’t restore."}};
   $("b-c").onclick=function(){var t=$("b-t");t.select();try{navigator.clipboard.writeText(t.value);$("b-st").textContent="Copied."}catch(e){document.execCommand&&document.execCommand("copy");$("b-st").textContent="Copied (or long-press to copy)."}};
-  $("b-l").onclick=function(){try{var a=JSON.parse($("b-t").value);if(!Array.isArray(a))throw 0;if(!confirm("Replace your current list with this one ("+a.length+" titles)?"))return;items=a;save();close()}catch(e){$("b-st").textContent="That doesn’t look like a saved list."}}
+  $("b-l").onclick=function(){try{var a=JSON.parse($("b-t").value);if(!Array.isArray(a))throw 0;if(!confirm("Replace your current list with this one ("+a.length+" titles)?"))return;if(items.length)try{localStorage.setItem("wl-prev",JSON.stringify(items))}catch(e2){}items=a;save();close()}catch(e){$("b-st").textContent="That doesn’t look like a saved list."}}
 }
 /* Refresh all linked shows */
 $("rf").onclick=async function(){var l=items.filter(function(i){return (i.tvm||i.tmdb)&&i.status!=="drop"}),m=$("msg"),c=0;
@@ -329,7 +332,7 @@ if(on){try{var app=initializeApp(C);auth=getAuth(app);db=getFirestore(app)}catch
 function ready(){return authP||(authP=signInAnonymously(auth).catch(function(e){authP=null;throw e}))}
 function ref(){return doc(db,"households",hid)}
 function payload(){last=Date.now();return{items:JSON.stringify(window.items),people:window.PEOPLE,updated:last}}
-function apply(d){try{window.items=JSON.parse(d.items||"[]");
+function apply(d){try{var inc=JSON.parse(d.items||"[]");if(inc.length<window.items.length){try{localStorage.setItem("wl-prev",JSON.stringify(window.items))}catch(e){}}window.items=inc;
   if(d.people&&d.people.length){window.PEOPLE=d.people;localStorage.setItem("wl-people",JSON.stringify(d.people))}
   localStorage.setItem(window.KEY,JSON.stringify(window.items));window.render()}catch(e){console.error(e)}}
 function listen(){if(unsub)unsub();unsub=onSnapshot(ref(),function(s){if(!s.exists()||s.metadata.hasPendingWrites)return;var d=s.data();if(d.updated===last)return;apply(d)},function(e){console.error(e)})}
@@ -340,7 +343,7 @@ window.SYNC={enabled:on,
     if(!s.exists()){hid=old;throw new Error("No household found with that code.")}
     localStorage.setItem("wl-hid",hid);apply(s.data());listen()},
   leave(){if(unsub)unsub();unsub=null;hid="";localStorage.removeItem("wl-hid")},
-  push(){if(!on||!hid)return;clearTimeout(timer);timer=setTimeout(async function(){try{await ready();await setDoc(ref(),payload())}catch(e){console.error(e)}},600)}};
+  push(){if(!on||!hid)return;clearTimeout(timer);timer=setTimeout(async function(){try{await ready();if(!window.items.length){var s=await getDoc(ref());if(s.exists()&&JSON.parse(s.data().items||"[]").length){apply(s.data());return}}await setDoc(ref(),payload())}catch(e){console.error(e)}},600)}};
 if(on&&hid){ready().then(function(){listen()}).catch(function(e){console.error(e)})}
 </script>
 </body>
