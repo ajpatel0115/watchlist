@@ -53,24 +53,29 @@ input,select,textarea{width:100%;padding:10px;border-radius:10px;border:1px soli
 </head>
 <body>
 <main>
-<h1>📺 Our Watchlist</h1>
+<h1>📺 Our Watchlist <span class="meta" id="sy" style="display:inline"></span></h1>
 <div class="row tabs" id="tabs"></div>
 <div class="srch"><input id="q" type="search" enterkeyhint="search" placeholder="Search your list…"><button id="qb">🔍 Search</button></div>
 <div class="row chips" id="chips"></div>
 <div class="row chips" id="tchips"></div>
 <select id="chsel" style="margin-bottom:10px"></select>
-<div class="row top"><button id="sg">✨ Suggestions</button><button id="rf">🔄 Refresh dates &amp; episodes</button><button id="bk">💾 Backup / share</button></div>
+<div class="row top"><button id="st-b">⚙️ Settings</button><button id="sg">✨ Suggestions</button><button id="rf">🔄 Refresh dates &amp; episodes</button><button id="bk">💾 Backup / share</button></div>
 <div class="meta" id="msg" style="margin-bottom:10px"></div>
 <div id="list"></div>
 </main>
 <button class="fab" id="add" aria-label="Add title">+</button>
 <div id="ov"><div class="sheet" id="sheet"></div></div>
 <script>
+/* ---- Family sync: paste your Firebase config here (see setup steps). Leave as-is to use the app on one device only. ---- */
+var FIREBASE_CONFIG={apiKey:"AIzaSyByGMEFKmxrYmbXDxH_TiKUlb1vP0L2UFQ",authDomain:"our-watchlist-51b39.firebaseapp.com",projectId:"our-watchlist-51b39",appId:"1:553324928597:web:46b6baa30a89b9c716bedc"};
+var PEOPLE=[];try{PEOPLE=JSON.parse(localStorage.getItem("wl-people")||"[]")}catch(e){}
 var KEY="watchlist-v2",items=[],tab="watch",who="All",ty="All",ch="All",q="";
 var SVC=["Netflix","Max","Disney+","Hulu","Prime Video","Apple TV+","Peacock","Paramount+","Theaters","Rent/Buy","Other"];
 try{items=JSON.parse(localStorage.getItem(KEY)||"[]")}catch(e){items=[]}
 items.forEach(autoDone);
-function save(){items.forEach(autoDone);try{localStorage.setItem(KEY,JSON.stringify(items))}catch(e){}}
+if(!PEOPLE.length)items.forEach(function(i){if(i.who&&i.who!=="Both"&&PEOPLE.indexOf(i.who)<0)PEOPLE.push(i.who)});
+function save(){items.forEach(autoDone);try{localStorage.setItem(KEY,JSON.stringify(items))}catch(e){}if(window.SYNC)SYNC.push()}
+function whoOK(i){if(who==="All")return true;if(who==="Both")return i.who==="Both";if(who.indexOf("Only ")===0)return i.who===who.slice(5);return i.who===who||i.who==="Both"}
 function $(id){return document.getElementById(id)}
 function iso(){var d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
 function days(s){return Math.round((new Date(s+"T00:00")-new Date(iso()+"T00:00"))/864e5)}
@@ -105,19 +110,20 @@ function merge(i,b){var grew=false;i.seasons=i.seasons||[];
 function prog(i){var S=i.seasons||[];if(i.type!=="show"||!S.length)return "";var c=tot(i),nx="";
   S.forEach(function(s){if(!nx)for(var k=1;k<=s.eps;k++)if(s.seen.indexOf(k)<0){nx="S"+s.n+" E"+k;break}});
   return '<div class="meta" style="margin-top:6px">'+(nx?"Next: "+nx+" · ":"All caught up · ")+c.w+" of "+c.t+" episodes watched</div>"}
-function stars(i){if(i.status!=="done")return "";var P=i.who==="Both"?["Anita","Dan"]:[i.who];
+function stars(i){if(i.status!=="done")return "";var P=i.who==="Both"?PEOPLE.slice():[i.who];
   return P.map(function(p){var v=(i.r&&i.r[p])||0,s="";for(var k=1;k<=5;k++)s+='<span class="st'+(k<=v?" f":"")+'" data-a="rate" data-id="'+i.id+'" data-p="'+p+'" data-n="'+k+'">★</span>';return '<div class="meta" style="margin-top:6px">'+p+' '+s+'</div>'}).join("")}
 function render(){
   var T=[["watch","To Watch"],["soon","Coming Soon"],["done","Watched"],["drop","Dropped"]];
   $("tabs").innerHTML=T.map(function(t){return '<button class="'+(tab===t[0]?"on":"")+'" data-t="'+t[0]+'">'+t[1]+'</button>'}).join("");
-  $("chips").innerHTML=["All","Anita","Dan","Both","Only Anita","Only Dan"].map(function(w){return '<button class="'+(who===w?"on":"")+'" data-w="'+w+'">'+w+'</button>'}).join("");
+  $("chips").innerHTML=["All"].concat(PEOPLE,["Both"],PEOPLE.map(function(p){return "Only "+p})).map(function(w){return '<button class="'+(who===w?"on":"")+'" data-w="'+esc(w)+'">'+(w==="Both"?"Together":esc(w))+'</button>'}).join("");
+  $("sy").textContent=localStorage.getItem("wl-hid")?"🔗":"";
   $("tchips").innerHTML=[["All","All types"],["show","📺 TV shows"],["movie","🎬 Movies"]].map(function(t){return '<button class="'+(ty===t[0]?"on":"")+'" data-y="'+t[0]+'">'+t[1]+'</button>'}).join("");
   var cs=[];items.forEach(function(i){if(i.svc&&cs.indexOf(i.svc)<0)cs.push(i.svc)});cs.sort();if(ch!=="All"&&cs.indexOf(ch)<0)ch="All";
   $("chsel").innerHTML='<option value="All">📡 All channels</option>'+cs.map(function(c){return '<option value="'+esc(c)+'"'+(c===ch?" selected":"")+'>'+esc(c)+'</option>'}).join("");
   var l=items.filter(function(i){
     if(ch!=="All"&&i.svc!==ch)return false;
     if(ty!=="All"&&i.type!==ty)return false;
-    if(who==="Anita"&&i.who==="Dan"||who==="Dan"&&i.who==="Anita"||who==="Both"&&i.who!=="Both"||who==="Only Anita"&&i.who!=="Anita"||who==="Only Dan"&&i.who!=="Dan")return false;
+    if(!whoOK(i))return false;
     if(q&&(i.title+" "+i.note+" "+i.svc).toLowerCase().indexOf(q)<0)return false;
     if(tab==="done")return i.status==="done";
     if(tab==="drop")return i.status==="drop";
@@ -128,7 +134,7 @@ function render(){
   $("list").innerHTML=l.map(function(i){
     var rel="";if(i.date){var d=days(i.date);rel=d>0?'<span class="soon">'+(d===1?"Tomorrow":"In "+d+" days")+' · '+i.date+'</span>':(i.status==="want"&&i.type==="movie"?'<span class="now">Available now</span>':"")}
     var id=' data-id="'+i.id+'"';
-    return '<div class="card"><h3>'+esc(i.title)+'</h3><div class="meta"><span class="tag">'+(i.type==="movie"?"🎬 Movie":"📺 Show")+'</span><span class="tag">👀 '+i.who+'</span><span class="tag">'+esc(i.svc)+'</span>'+badge(i)+rel+'</div>'+
+    return '<div class="card"><h3>'+esc(i.title)+'</h3><div class="meta"><span class="tag">'+(i.type==="movie"?"🎬 Movie":"📺 Show")+'</span><span class="tag">👀 '+(i.who==="Both"?"Together":esc(i.who))+'</span><span class="tag">'+esc(i.svc)+'</span>'+badge(i)+rel+'</div>'+
     (i.note?'<div class="meta" style="margin-top:6px">'+esc(i.note)+'</div>':"")+(i.desc?'<details style="margin-top:6px"><summary class="meta">📖 Description</summary><div style="margin-top:4px;font-size:14px;color:var(--mut)">'+esc(i.desc)+'</div></details>':"")+prog(i)+stars(i)+
     '<div class="acts">'+(i.status==="done"||i.status==="drop"?"":'<button class="pri" data-a="done"'+id+'>✓ Watched</button>')+
     (i.type==="show"?'<button data-a="eps"'+id+'>Episodes</button>':"")+
@@ -144,7 +150,7 @@ function form(i,pre){
   open(`<h2 style="margin:0">${n?"Add title":"Edit title"}</h2>
   <label>Title</label><input id="f-t" value="${esc(i.title)}">
   <div class="two"><div><label>Type</label><select id="f-ty"><option value="show"${i.type==="show"?" selected":""}>TV show / series</option><option value="movie"${i.type==="movie"?" selected":""}>Movie</option></select></div>
-  <div><label>Who watches</label><select id="f-w">${["Both","Anita","Dan"].map(function(w){return `<option${i.who===w?" selected":""}>${w}</option>`}).join("")}</select></div></div>
+  <div><label>Who watches</label><select id="f-w">${["Both"].concat(PEOPLE,(i.who&&i.who!=="Both"&&PEOPLE.indexOf(i.who)<0)?[i.who]:[]).map(function(w){return `<option value="${esc(w)}"${i.who===w?" selected":""}>${w==="Both"?"Together":esc(w)}</option>`}).join("")}</select></div></div>
   <button type="button" class="lk big" id="f-l">🔍 Search TV / movie database</button>
   <div class="meta" id="f-st" style="margin-top:6px"></div><div id="f-res"></div>
   <label>Streaming channel</label><select id="f-s">${opts.map(function(s){return `<option${i.svc===s?" selected":""}>${esc(s)}</option>`}).join("")}</select>
@@ -229,8 +235,8 @@ async function seedRecs(i){
   }catch(e){if(/key/i.test(e.message||""))throw e;return []}}
 function sugg(){
   open('<h2 style="margin:0">✨ Suggestions</h2><div class="meta">Based on what you’ve rated or watched. Suggest for:</div><div class="row chips" id="s-c" style="margin-top:8px"></div><div class="meta" id="s-st"></div><div id="s-l"></div>');
-  var W=["All","Anita","Dan","Both"];
-  function chips(){$("s-c").innerHTML=W.map(function(w){return '<button class="'+(sg.w===w?"on":"")+'" data-w="'+w+'">'+w+'</button>'}).join("")}
+  var W=["All"].concat(PEOPLE,["Both"]);
+  function chips(){$("s-c").innerHTML=W.map(function(w){return '<button class="'+(sg.w===w?"on":"")+'" data-w="'+esc(w)+'">'+(w==="Both"?"Together":esc(w))+'</button>'}).join("")}
   async function run(){var st=$("s-st"),L=$("s-l");L.innerHTML="";
     var seeds=items.filter(function(i){return i.status!=="drop"&&(sg.w==="All"||(sg.w==="Both"?i.who==="Both":(i.who===sg.w||i.who==="Both")))});
     function best(i){return i.r?Math.max.apply(null,Object.keys(i.r).map(function(k){return i.r[k]||0})):0}
@@ -249,8 +255,30 @@ function sugg(){
   chips();
   $("sheet").onclick=function(e){var d=e.target.dataset;
     if(d.w){sg.w=d.w;chips();run()}
-    else if(d.add!==undefined){var r=sg.res[+d.add];form(null,{title:r.name,desc:r.o,type:r.type,who:(sg.w==="Anita"||sg.w==="Dan")?sg.w:"Both"})}};
+    else if(d.add!==undefined){var r=sg.res[+d.add];form(null,{title:r.name,desc:r.o,type:r.type,who:(sg.w==="All"||sg.w==="Both")?"Both":sg.w})}};
   run()}
+/* Settings */
+function settings(){
+  var on=window.SYNC&&SYNC.enabled,hid=localStorage.getItem("wl-hid")||"";
+  function fmt(c){return c.replace(/(.{4})(?=.)/g,"$1-")}
+  var sync=!on?'<div class="meta">Sync isn’t set up in this copy of the app.</div>':hid?`<div class="meta">Connected. Share this code with your family so their devices can join:</div><input readonly value="${fmt(hid)}" style="margin-top:6px"><div class="sub"><button type="button" id="y-c">Copy code</button><button type="button" id="y-l">Leave</button></div>`:`<button type="button" class="lk" id="y-new">Create household (uploads my list)</button><label>Or join with a code</label><input id="y-code" placeholder="XXXX-XXXX-XXXX-XXXX" autocapitalize="characters"><button type="button" class="lk" id="y-j">Join household</button>`;
+  open(`<h2 style="margin:0">⚙️ Settings</h2>
+  <label>Who’s in your household? (names separated by commas)</label><input id="s-p" value="${esc(PEOPLE.join(", "))}" placeholder="e.g. Maria, Tom">
+  <label>Movie database key (free, from themoviedb.org)</label><input id="s-k" value="${esc(localStorage.getItem("tmdbkey")||"")}" placeholder="optional, needed for movie search">
+  <div class="sub"><button type="button" class="go" id="s-ok">Save</button></div>
+  <h3 style="margin:18px 0 4px">Sync across devices</h3><div id="y-st" class="meta"></div>${sync}`);
+  var st=$("y-st");
+  $("s-ok").onclick=function(){var p=$("s-p").value.split(",").map(function(x){return x.trim()}).filter(function(x,k,a){return x&&x!=="Both"&&a.indexOf(x)===k}).slice(0,8);PEOPLE=p;
+    try{localStorage.setItem("wl-people",JSON.stringify(p));var kk=$("s-k").value.trim();if(kk)localStorage.setItem("tmdbkey",kk);else localStorage.removeItem("tmdbkey")}catch(e){}save();close()};
+  if(!on)return;
+  if(hid){$("y-c").onclick=function(){if(navigator.clipboard)navigator.clipboard.writeText(fmt(hid));st.textContent="Code copied."};
+    $("y-l").onclick=function(){if(confirm("Stop syncing on this device? Your list stays here but won’t update with the family’s.")){SYNC.leave();settings()}}}
+  else{$("y-new").onclick=async function(){st.textContent="Creating…";try{await SYNC.create();settings()}catch(e){st.textContent="Couldn’t create: "+(e.message||"check your setup")}};
+    $("y-j").onclick=async function(){var c=$("y-code").value.toUpperCase().replace(/[^A-Z0-9]/g,"");
+      if(c.length!==16){st.textContent="That code should be 16 letters and numbers.";return}
+      if(items.length&&!confirm("Joining replaces the list on this device with the household’s list. Continue?"))return;
+      st.textContent="Joining…";try{await SYNC.join(c);close()}catch(e){st.textContent="Couldn’t join: "+(e.message||"check the code")}}}
+}
 /* Backup / share */
 function backup(){
   open(`<h2 style="margin:0">Backup / share</h2><div class="meta">Copy this text to move your list to another device (paste it into Notes or Messages), then paste it here on the other device and tap Load.</div>
@@ -270,6 +298,7 @@ $("rf").onclick=async function(){var l=items.filter(function(i){return (i.tvm||i
   save();render();m.textContent="Refreshed "+c+" of "+l.length+" titles."};
 $("bk").onclick=backup;
 $("sg").onclick=sugg;
+$("st-b").onclick=settings;
 $("add").onclick=function(){form(null)};
 $("ov").onclick=function(e){if(e.target.id==="ov"||e.target.id==="bk-b")close()};
 $("q").oninput=function(e){q=e.target.value.trim().toLowerCase();render()};
@@ -289,6 +318,30 @@ $("list").onclick=function(e){var a=e.target.dataset.a,id=e.target.dataset.id;if
   else if(a==="edit")form(i);
   else if(a==="del"&&confirm("Delete “"+i.title+"”?")){items=items.filter(function(x){return x.id!==id});save();render()}};
 render();
+if(!PEOPLE.length)setTimeout(settings,800);
+</script>
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {getAuth,signInAnonymously} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {getFirestore,doc,getDoc,setDoc,onSnapshot} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+var C=window.FIREBASE_CONFIG,on=!!(C&&C.apiKey&&!/PASTE/.test(C.apiKey)),db,auth,hid=localStorage.getItem("wl-hid")||"",unsub=null,timer,last=0,authP=null;
+if(on){try{var app=initializeApp(C);auth=getAuth(app);db=getFirestore(app)}catch(e){on=false}}
+function ready(){return authP||(authP=signInAnonymously(auth).catch(function(e){authP=null;throw e}))}
+function ref(){return doc(db,"households",hid)}
+function payload(){last=Date.now();return{items:JSON.stringify(window.items),people:window.PEOPLE,updated:last}}
+function apply(d){try{window.items=JSON.parse(d.items||"[]");
+  if(d.people&&d.people.length){window.PEOPLE=d.people;localStorage.setItem("wl-people",JSON.stringify(d.people))}
+  localStorage.setItem(window.KEY,JSON.stringify(window.items));window.render()}catch(e){console.error(e)}}
+function listen(){if(unsub)unsub();unsub=onSnapshot(ref(),function(s){if(!s.exists()||s.metadata.hasPendingWrites)return;var d=s.data();if(d.updated===last)return;apply(d)},function(e){console.error(e)})}
+function gen(){var A="ABCDEFGHJKMNPQRSTUVWXYZ23456789",b=new Uint8Array(16),o="";crypto.getRandomValues(b);for(var k=0;k<16;k++)o+=A[b[k]%A.length];return o}
+window.SYNC={enabled:on,
+  async create(){await ready();hid=gen();await setDoc(ref(),payload());localStorage.setItem("wl-hid",hid);listen()},
+  async join(code){await ready();var old=hid;hid=code;var s=await getDoc(ref());
+    if(!s.exists()){hid=old;throw new Error("No household found with that code.")}
+    localStorage.setItem("wl-hid",hid);apply(s.data());listen()},
+  leave(){if(unsub)unsub();unsub=null;hid="";localStorage.removeItem("wl-hid")},
+  push(){if(!on||!hid)return;clearTimeout(timer);timer=setTimeout(async function(){try{await ready();await setDoc(ref(),payload())}catch(e){console.error(e)}},600)}};
+if(on&&hid){ready().then(function(){listen()}).catch(function(e){console.error(e)})}
 </script>
 </body>
 </html>
