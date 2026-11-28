@@ -81,7 +81,7 @@ function iso(){var d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1
 function days(s){return Math.round((new Date(s+"T00:00")-new Date(iso()+"T00:00"))/864e5)}
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
 function tot(i){var t=0,w=0;(i.seasons||[]).forEach(function(s){t+=s.eps;w+=s.seen.length});return{t:t,w:w}}
-function soon(i){return i.status!=="drop"&&!!i.date&&days(i.date)>0}
+function soon(i){if(i.status==="drop")return false;if(i.date&&days(i.date)>0)return true;if(i.run&&i.status==="want"){var c=tot(i);return c.t>0&&c.w>=c.t}return false}
 function waiting(i){if(i.status==="done"||!soon(i))return false;var c=tot(i);return !(c.t>c.w)}
 function autoDone(i){if(i.type==="show"&&i.status==="want"&&(i.seasons||[]).length){var c=tot(i);if(c.t>0&&c.w>=c.t&&!soon(i))i.status="done"}}
 function badge(i){if(i.type!=="show"||!(i.seasons||[]).length||i.status==="done"||i.status==="drop")return "";var c=tot(i),a=c.t-c.w;return '<span class="badge '+(a>=2?"b2":a===1?"b1":"b0")+'">'+(a>=2?"▶ "+a+" ready":a===1?"1 waiting":"caught up")+'</span>'}
@@ -132,15 +132,16 @@ function renderMain(){
   var l=base.filter(function(i){return inTab(i,tab)});
   $("tabs").innerHTML=T.map(function(t){return '<button class="'+(tab===t[0]?"on":"")+'" data-t="'+t[0]+'">'+t[1]+' ('+cnt(t[0])+')</button>'}).join("");
   var oth=T.filter(function(t){return t[0]!==tab&&cnt(t[0])}).map(function(t){return t[1]+" ("+cnt(t[0])+")"}),hint=oth.length?"<br>Check: "+oth.join(", "):"";
-  l.sort(function(a,b){return tab==="soon"?a.date.localeCompare(b.date):(a.title||"").localeCompare(b.title||"")});
+  l.sort(function(a,b){return tab==="soon"?(a.date||"9999").localeCompare(b.date||"9999"):(a.title||"").localeCompare(b.title||"")});
   $("list").innerHTML=l.map(function(i){
     var rel="";if(i.date){var d=days(i.date);rel=d>0?'<span class="soon">'+(d===1?"Tomorrow":"In "+d+" days")+' · '+i.date+'</span>':(i.status==="want"&&i.type==="movie"?'<span class="now">Available now</span>':"")}
+    if(!i.date&&i.run&&i.status==="want"&&soon(i))rel='<span class="soon">Waiting for next season · date not announced</span>';
     var id=' data-id="'+i.id+'"';
     return '<div class="card"><h3>'+esc(i.title)+'</h3><div class="meta"><span class="tag">'+(i.type==="movie"?"🎬 Movie":"📺 Show")+'</span><span class="tag">👀 '+(i.who==="Both"?"Together":esc(i.who))+'</span><span class="tag">'+esc(i.svc)+'</span>'+badge(i)+rel+'</div>'+
     (i.note?'<div class="meta" style="margin-top:6px">'+esc(i.note)+'</div>':"")+(i.desc?'<details style="margin-top:6px"><summary class="meta">📖 Description</summary><div style="margin-top:4px;font-size:14px;color:var(--mut)">'+esc(i.desc)+'</div></details>':"")+prog(i)+stars(i)+
     '<div class="acts">'+(i.status==="done"||i.status==="drop"?"":'<button class="pri" data-a="done"'+id+'>✓ Watched</button>')+
     (i.type==="show"?'<button data-a="eps"'+id+'>Episodes</button>':"")+
-    (i.status==="drop"?'<button data-a="resume"'+id+'>Resume</button>':(i.status!=="done"&&i.type==="show")?'<button data-a="drop"'+id+'>Abandon</button>':"")+
+    (i.status==="drop"?'<button data-a="resume"'+id+'>Resume</button>':i.status==="done"?'<button data-a="resume"'+id+'>↩ Move back</button>':(i.type==="show")?'<button data-a="drop"'+id+'>Abandon</button>':"")+
     '<button data-a="edit"'+id+'>Edit</button><button data-a="del"'+id+'>Delete</button></div></div>'}).join("")||'<div class="empty">'+(tab==="done"?"Nothing here yet. Titles move here when you tap ✓ Watched, or when every episode is watched and nothing new is scheduled.":"Nothing here yet. Tap + to add a title.")+hint+'</div>'}
 var BACK='<button type="button" class="back" id="bk-b">← Back</button>';
 function open(h){$("sheet").innerHTML=BACK+h;$("sheet").scrollTop=0;$("ov").classList.add("show")}
@@ -187,7 +188,7 @@ function form(i,pre){
     }catch(e){st.textContent="Search failed: "+(e.message||"check your connection")}};
   $("f-res").onclick=async function(e){var b=e.target.closest(".res");if(!b)return;if(b.dataset.m!==undefined)return pickMovie(+b.dataset.m);var s=R[+b.dataset.k].show,st=$("f-st");
     st.textContent="Loading episodes…";
-    try{var eps=await tv("/shows/"+s.id+"/episodes");T.tvm=s.id;T.b=build(eps);
+    try{var eps=await tv("/shows/"+s.id+"/episodes");T.tvm=s.id;T.b=build(eps);T.run=s.status!=="Ended";
       $("f-t").value=s.name;$("f-ty").value="show";T.desc=clean(s.summary);$("f-ds").value=T.desc;
       setSvc(chan(s));
       $("f-d").value=T.b.date;$("f-n").value=T.b.note;$("f-res").innerHTML="";
@@ -199,7 +200,7 @@ function form(i,pre){
     if(n){var tl=t.toLowerCase();
       if(items.some(function(x){return (T.tvm&&x.tvm===T.tvm)||(T.tmdb&&x.tmdb===T.tmdb)||String(x.title).toLowerCase()===tl})&&!confirm("“"+t+"” looks like it’s already on your list. Add it anyway?"))return;
       o.id=Date.now()+"";o.status="want";items.push(o)}
-    if(T.tvm){o.tvm=T.tvm;if(T.b)merge(o,T.b)}if(T.tmdb)o.tmdb=T.tmdb;
+    if(T.tvm){o.tvm=T.tvm;if(T.b)merge(o,T.b);if(T.run!==undefined)o.run=T.run}if(T.tmdb)o.tmdb=T.tmdb;
     save();close()}
 }
 /* Episodes sheet */
@@ -295,7 +296,7 @@ function backup(){
 $("rf").onclick=async function(){var l=items.filter(function(i){return (i.tvm||i.tmdb)&&i.status!=="drop"}),m=$("msg"),c=0;
   if(!l.length){m.textContent="Nothing is linked to a database yet. Use Search when adding or editing a title.";return}
   for(var k=0;k<l.length;k++){m.textContent="Refreshing "+(k+1)+" of "+l.length+"…";
-    try{var it=l[k];if(it.tvm){merge(it,build(await tv("/shows/"+it.tvm+"/episodes")));if(!it.desc){try{it.desc=clean((await tv("/shows/"+it.tvm)).summary)}catch(e2){}}}
+    try{var it=l[k];if(it.tvm){merge(it,build(await tv("/shows/"+it.tvm+"/episodes")));try{var sh=await tv("/shows/"+it.tvm);it.run=sh.status!=="Ended";if(!it.desc)it.desc=clean(sh.summary)}catch(e2){}}
       else if(it.status!=="done"){var d=await tm("/movie/"+it.tmdb);it.date=d.release_date||it.date;if(!it.desc)it.desc=d.overview||"";it.svc=await movieSvc(it.tmdb,it.date)}c++}catch(e){}
     await new Promise(function(r){setTimeout(r,600)})}
   save();render();m.textContent="Refreshed "+c+" of "+l.length+" titles."};
@@ -316,7 +317,7 @@ $("list").onclick=function(e){var a=e.target.dataset.a,id=e.target.dataset.id;if
   if(a==="rate"){var p=e.target.dataset.p,v=+e.target.dataset.n;i.r=i.r||{};i.r[p]=i.r[p]===v?0:v;save();render()}
   else if(a==="done"){(i.seasons||[]).forEach(fill);i.status="done";save();render()}
   else if(a==="drop"){i.status="drop";save();render()}
-  else if(a==="resume"){i.status="want";save();render()}
+  else if(a==="resume"){if(i.status==="done"&&i.type==="show")i.run=true;i.status="want";save();render()}
   else if(a==="eps")epsheet(i);
   else if(a==="edit")form(i);
   else if(a==="del"&&confirm("Delete “"+i.title+"”?")){items=items.filter(function(x){return x.id!==id});save();render()}};
